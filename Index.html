@@ -1,0 +1,339 @@
+<!DOCTYPE html><html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Photo + GPS + Compass Logger</title>
+  <style>
+    :root { --bg:#0f172a; --fg:#e5e7eb; --muted:#9ca3af; --accent:#60a5fa; --card:#111827; }
+    html,body{height:100%}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;background:var(--bg);color:var(--fg)}
+    header{padding:12px 16px;border-bottom:1px solid #1f2937;display:flex;align-items:center;gap:12px}
+    h1{font-size:18px;margin:0}
+    main{display:grid;grid-template-columns:1fr 380px;gap:12px;height:calc(100% - 57px)}
+    @media (max-width: 960px){ main{grid-template-columns:1fr; grid-auto-rows:min-content; height:auto} }
+    .panel{background:var(--card);border:1px solid #1f2937;border-radius:12px;padding:12px}
+    .controls{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+    button,input[type="file"]{background:#1f2937;color:var(--fg);border:1px solid #374151;border-radius:10px;padding:8px 12px;font-weight:600;cursor:pointer}
+    button.primary{background:var(--accent);border-color:transparent;color:#0b1020}
+    button:disabled{opacity:.5;cursor:not-allowed}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
+    .thumb{border:1px solid #374151;border-radius:10px;overflow:hidden}
+    .thumb img{display:block;width:100%;height:120px;object-fit:cover}
+    .thumb .meta{padding:8px;font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+    .row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
+    #map{height:60vh;border-radius:12px;border:1px solid #1f2937}
+    .small{font-size:12px;color:var(--muted)}
+    .pill{display:inline-flex;gap:6px;align-items:center;background:#0b1220;border:1px solid #263040;padding:6px 10px;border-radius:999px}
+    details{margin-top:8px}
+    summary{cursor:pointer;color:var(--muted)}
+  </style>
+</head>
+<body>
+  <header>
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="5" width="18" height="14" rx="2" stroke="#60a5fa" stroke-width="2"/><circle cx="8.5" cy="12" r="3" fill="#60a5fa"/><path d="M12 12l1.8 1.8L17 10.5l4 4.5v2a2 2 0 0 1-2 2H5" stroke="#60a5fa" stroke-width="2"/></svg>
+    <h1>Photo + GPS + Compass Logger</h1>
+    <span class="pill" id="statusPill">Not tracking</span>
+  </header>  <main>
+    <section class="panel">
+      <div class="controls">
+        <input id="fileInput" type="file" accept="image/*" capture="environment" />
+        <button id="btnEnableCompass" title="Grant access to compass">Enable Compass</button>
+        <button id="btnStartGPS" class="primary">Start GPS</button>
+        <button id="btnStopGPS">Stop GPS</button>
+        <button id="btnSavePoint" disabled>Save Point</button>
+        <button id="btnShowMap">Show Map</button>
+      </div>
+      <div class="row small">
+        <div>Lat/Lon: <span id="latlon" class="mono">–</span></div>
+        <div>Accuracy: <span id="acc" class="mono">–</span> m</div>
+        <div>Bearing: <span id="bearing" class="mono">–</span> °</div>
+      </div>
+      <details>
+        <summary>What this does</summary>
+        <ul class="small">
+          <li>Use your camera to take a photo.</li>
+          <li>Record your GPS position, accuracy and compass direction at the moment you save.</li>
+          <li>Export as GeoJSON or a ready-made HTML map showing points, direction arrows and accuracy circles.</li>
+        </ul>
+      </details><h3>Captured points</h3>
+  <div id="list" class="grid"></div>
+
+  <div class="controls" style="margin-top:12px">
+    <button id="btnExportGeoJSON">Export GeoJSON</button>
+    <button id="btnExportHTML">Export HTML Map</button>
+    <button id="btnClear">Clear</button>
+  </div>
+</section>
+
+<aside class="panel">
+  <h3 style="margin-top:0">Map</h3>
+  <div id="map"></div>
+  <p class="small">If the map is empty, add points then click Show Map. Accuracy is drawn as a circle; an arrow shows the bearing.</p>
+</aside>
+
+  </main>  <!-- Leaflet for in-app map preview -->  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>  <script>
+    // State
+    const points = []; // {id, ts, lat, lon, acc, bearing, photoDataUrl}
+    let watchId = null;
+    let currentPosition = null; // {lat, lon, acc}
+    let currentBearing = null;  // degrees
+
+    const els = {
+      file: document.getElementById('fileInput'),
+      btnEnableCompass: document.getElementById('btnEnableCompass'),
+      btnStartGPS: document.getElementById('btnStartGPS'),
+      btnStopGPS: document.getElementById('btnStopGPS'),
+      btnSave: document.getElementById('btnSavePoint'),
+      btnShowMap: document.getElementById('btnShowMap'),
+      latlon: document.getElementById('latlon'),
+      acc: document.getElementById('acc'),
+      bearing: document.getElementById('bearing'),
+      list: document.getElementById('list'),
+      status: document.getElementById('statusPill'),
+      btnExportGeoJSON: document.getElementById('btnExportGeoJSON'),
+      btnExportHTML: document.getElementById('btnExportHTML'),
+      btnClear: document.getElementById('btnClear')
+    };
+
+    // Compass handling (iOS requires a tap + permission)
+    function initCompass(){
+      function onOrientation(e){
+        let b = null;
+        if (typeof e.webkitCompassHeading === 'number') {
+          b = e.webkitCompassHeading; // iOS, already 0..360 clockwise from North
+        } else if (typeof e.alpha === 'number') {
+          // alpha is 0..360 clockwise from device top relative to Earth's magnetic north in some browsers
+          b = 360 - e.alpha; // convert to compass-like bearing
+        }
+        if (b != null) {
+          currentBearing = ((b % 360) + 360) % 360;
+          els.bearing.textContent = currentBearing.toFixed(0);
+          maybeEnableSave();
+        }
+      }
+
+      if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function'){
+        DeviceOrientationEvent.requestPermission().then(state => {
+          if (state === 'granted') window.addEventListener('deviceorientation', onOrientation, true);
+          else alert('Compass permission was denied. You can still record GPS.');
+        }).catch(()=> alert('Compass permission failed.'));
+      } else if (window.DeviceOrientationEvent){
+        window.addEventListener('deviceorientation', onOrientation, true);
+      } else {
+        alert('Compass not supported on this device/browser.');
+      }
+    }
+
+    els.btnEnableCompass.addEventListener('click', initCompass);
+
+    // GPS handling
+    function startGPS(){
+      if (!('geolocation' in navigator)){
+        alert('Geolocation not supported.');
+        return;
+      }
+      els.status.textContent = 'Tracking…';
+      els.status.style.borderColor = '#60a5fa';
+      els.status.style.color = '#60a5fa';
+      watchId = navigator.geolocation.watchPosition(pos => {
+        const { latitude:lat, longitude:lon, accuracy:acc } = pos.coords;
+        currentPosition = { lat, lon, acc };
+        els.latlon.textContent = lat.toFixed(6)+', '+lon.toFixed(6);
+        els.acc.textContent = acc.toFixed(1);
+        maybeEnableSave();
+      }, err => {
+        alert('GPS error: '+ err.message);
+      }, {
+        enableHighAccuracy: true, timeout: 15000, maximumAge: 0
+      });
+    }
+
+    function stopGPS(){
+      if (watchId != null){ navigator.geolocation.clearWatch(watchId); watchId = null; }
+      els.status.textContent = 'Not tracking';
+      els.status.style.borderColor = '#263040';
+      els.status.style.color = '#9ca3af';
+    }
+
+    els.btnStartGPS.addEventListener('click', startGPS);
+    els.btnStopGPS.addEventListener('click', stopGPS);
+
+    // Handle photo input
+    let lastPhotoDataUrl = null;
+    els.file.addEventListener('change', async (e)=>{
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      const dataUrl = await fileToDataURL(f);
+      lastPhotoDataUrl = dataUrl;
+      maybeEnableSave();
+    });
+
+    function maybeEnableSave(){
+      els.btnSave.disabled = !(lastPhotoDataUrl && currentPosition);
+    }
+
+    // Save point
+    els.btnSave.addEventListener('click', ()=>{
+      if (!currentPosition || !lastPhotoDataUrl){
+        alert('Need a photo and a GPS fix first.');
+        return;
+      }
+      const p = {
+        id: crypto.randomUUID(),
+        ts: new Date().toISOString(),
+        lat: currentPosition.lat,
+        lon: currentPosition.lon,
+        acc: currentPosition.acc,
+        bearing: typeof currentBearing === 'number' ? currentBearing : null,
+        photoDataUrl: lastPhotoDataUrl
+      };
+      points.push(p);
+      renderList();
+      refreshMap();
+      // reset photo
+      els.file.value = '';
+      lastPhotoDataUrl = null;
+      els.btnSave.disabled = true;
+    });
+
+    // Render list
+    function renderList(){
+      els.list.innerHTML = '';
+      for (const p of points){
+        const div = document.createElement('div');
+        div.className = 'thumb';
+        const img = document.createElement('img');
+        img.src = p.photoDataUrl;
+        img.alt = 'photo';
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+        meta.innerHTML = `
+          <div class="mono">${p.lat.toFixed(6)}, ${p.lon.toFixed(6)}</div>
+          <div>± ${p.acc.toFixed(1)} m • ${p.bearing!=null?('↗ '+p.bearing.toFixed(0)+'°'):'no bearing'}</div>
+          <div class="small">${new Date(p.ts).toLocaleString()}</div>
+          <div class="row">
+            <button data-id="${p.id}" class="del">Delete</button>
+            <button data-id="${p.id}" class="dl">Download photo</button>
+          </div>`;
+        div.appendChild(img);
+        div.appendChild(meta);
+        els.list.appendChild(div);
+      }
+      // wire buttons
+      els.list.querySelectorAll('button.del').forEach(b=>b.onclick = () => {
+        const id = b.getAttribute('data-id');
+        const idx = points.findIndex(x=>x.id===id);
+        if (idx>=0){ points.splice(idx,1); renderList(); refreshMap(); }
+      });
+      els.list.querySelectorAll('button.dl').forEach(b=>b.onclick = () => {
+        const id = b.getAttribute('data-id');
+        const p = points.find(x=>x.id===id);
+        if (p) downloadBlob(dataURLToBlob(p.photoDataUrl), `photo_${p.id}.jpg`);
+      });
+    }
+
+    // Simple in-app map preview using Leaflet
+    let map, layerGroup;
+    function ensureMap(){
+      if (!map){
+        map = L.map('map');
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 20, attribution: '&copy; OpenStreetMap' }).addTo(map);
+        layerGroup = L.layerGroup().addTo(map);
+      }
+    }
+
+    function refreshMap(){
+      ensureMap();
+      layerGroup.clearLayers();
+      if (points.length === 0){ return; }
+      const ll = [];
+      for (const p of points){
+        const latlng = [p.lat, p.lon];
+        ll.push(latlng);
+        const popupHtml = `<div style="min-width:180px">
+          <div><strong>${new Date(p.ts).toLocaleString()}</strong></div>
+          <div class="mono">${p.lat.toFixed(6)}, ${p.lon.toFixed(6)}</div>
+          <div>± ${p.acc.toFixed(1)} m ${p.bearing!=null?('• '+p.bearing.toFixed(0)+'°'):''}</div>
+          <img src="${p.photoDataUrl}" style="width:100%;margin-top:6px;border-radius:8px"/>
+        </div>`;
+        L.marker(latlng).addTo(layerGroup).bindPopup(popupHtml);
+        // accuracy circle
+        L.circle(latlng, { radius: p.acc, color:'#60a5fa', weight:1, fillOpacity:0.08 }).addTo(layerGroup);
+        // direction arrow: a short 20 m line
+        if (typeof p.bearing === 'number'){
+          const dest = destinationPoint(p.lat, p.lon, p.bearing, 20);
+          L.polyline([latlng, [dest.lat, dest.lon]], { weight:3 }).addTo(layerGroup);
+        }
+      }
+      const b = L.latLngBounds(ll);
+      map.fitBounds(b.pad(0.2));
+    }
+
+    document.getElementById('btnShowMap').addEventListener('click', refreshMap);
+
+    // Export GeoJSON
+    els.btnExportGeoJSON.addEventListener('click', ()=>{
+      const fc = {
+        type: 'FeatureCollection',
+        features: points.map(p=>({
+          type:'Feature',
+          geometry:{ type:'Point', coordinates:[p.lon, p.lat] },
+          properties:{ id:p.id, timestamp:p.ts, accuracy:p.acc, bearing:p.bearing, photo:p.photoDataUrl }
+        }))
+      };
+      downloadBlob(new Blob([JSON.stringify(fc,null,2)], {type:'application/geo+json'}), 'photo_points.geojson');
+    });
+
+    // Export standalone HTML map (references Leaflet CDN)
+    els.btnExportHTML.addEventListener('click', ()=>{
+      const data = points.map(p=>({ lat:p.lat, lon:p.lon, acc:p.acc, bearing:p.bearing, ts:p.ts, photo:p.photoDataUrl }));
+      const html = buildMapHTML(data);
+      downloadBlob(new Blob([html], {type:'text/html'}), 'map.html');
+    });
+
+    // Clear
+    els.btnClear.addEventListener('click', ()=>{
+      if (confirm('Delete all captured points?')){ points.splice(0, points.length); renderList(); refreshMap(); }
+    });
+
+    // Utils
+    function fileToDataURL(file){
+      return new Promise((res, rej)=>{ const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+    }
+    function downloadBlob(blob, filename){
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename; a.click();
+      setTimeout(()=> URL.revokeObjectURL(url), 1000);
+    }
+    function dataURLToBlob(dataUrl){
+      const [h,b64] = dataUrl.split(',');
+      const mime = /data:(.*?);base64/.exec(h)[1];
+      const bin = atob(b64); const len = bin.length; const u8 = new Uint8Array(len);
+      for (let i=0;i<len;i++) u8[i] = bin.charCodeAt(i);
+      return new Blob([u8], {type:mime});
+    }
+    // Destination point given start lat/lon, bearing (deg), distance meters
+    function destinationPoint(lat, lon, bearingDeg, distM){
+      const R = 6371000; // m
+      const brng = bearingDeg * Math.PI/180;
+      const φ1 = lat * Math.PI/180; const λ1 = lon * Math.PI/180;
+      const δ = distM / R;
+      const φ2 = Math.asin(Math.sin(φ1)*Math.cos(δ) + Math.cos(φ1)*Math.sin(δ)*Math.cos(brng));
+      const λ2 = λ1 + Math.atan2(Math.sin(brng)*Math.sin(δ)*Math.cos(φ1), Math.cos(δ)-Math.sin(φ1)*Math.sin(φ2));
+      return { lat: φ2*180/Math.PI, lon: ((λ2*180/Math.PI + 540)%360)-180 };
+    }
+
+    function buildMapHTML(data){
+      return `<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Map Export</title>
+      <link rel=\"stylesheet\" href=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.css\" integrity=\"sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=\" crossorigin>
+      <style>html,body,#map{height:100%;margin:0} .pop img{max-width:240px;border-radius:8px}</style></head><body><div id=\"map\"></div>
+  <script src=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.js\" integrity=\"sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=\" crossorigin></script>
+  <script>const data=${JSON.stringify(data)};const map=L.map('map');L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20,attribution:'&copy; OpenStreetMap'}).addTo(map);const g=L.layerGroup().addTo(map);const ll=[];function dest(lat,lon,brg,dist){const R=6371000,br=brg*Math.PI/180,phi1=lat*Math.PI/180,lam1=lon*Math.PI/180,del=dist/R;const phi2=Math.asin(Math.sin(phi1)*Math.cos(del)+Math.cos(phi1)*Math.sin(del)*Math.cos(br));const lam2=lam1+Math.atan2(Math.sin(br)*Math.sin(del)*Math.cos(phi1),Math.cos(del)-Math.sin(phi1)*Math.sin(phi2));return{lat:phi2*180/Math.PI,lon:(lam2*180/Math.PI+540)%360-180}};data.forEach(p=>{const latlng=[p.lat,p.lon];ll.push(latlng);const html=\`<div class=pop><b>\${new Date(p.ts).toLocaleString()}</b><br><span>\${p.lat.toFixed(6)}, \${p.lon.toFixed(6)}</span><br><span>&plusmn; \${p.acc.toFixed(1)} m \${p.bearing!=null?'• '+p.bearing.toFixed(0)+'°':''}</span><br><img src=\"\${p.photo}\"></div>\`;L.marker(latlng).addTo(g).bindPopup(html);L.circle(latlng,{radius:p.acc,color:'#3b82f6',weight:1,fillOpacity:.08}).addTo(g);if(typeof p.bearing==='number'){const d=dest(p.lat,p.lon,p.bearing,20);L.polyline([latlng,[d.lat,d.lon]],{weight:3}).addTo(g)}});if(ll.length){map.fitBounds(L.latLngBounds(ll).pad(.2))}</script></body></html>`;
+}
+
+  </script>
+</body>
+</html>
