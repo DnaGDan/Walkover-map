@@ -119,7 +119,7 @@
 
       if (!('geolocation' in navigator)){ log('Geolocation not supported.'); return; }
       setStatus('Requesting GPS…', '#f59e0b'); log('Requesting GPS position…');
-      if (watchId != null){ try{ navigator.geolocation.clearWatch(watchId); }catch{} watchId = null; }
+      if (watchId != null){ try{ navigator.geolocation.clearWatch(watchId); }catch(e){} watchId = null; }
       navigator.geolocation.getCurrentPosition(onFix, onFixError, { enableHighAccuracy:true, timeout:15000, maximumAge:0 });
 
       function onFix(pos){
@@ -127,14 +127,12 @@
         currentPosition = { lat, lon, acc };
         els.latlon.textContent = lat.toFixed(6)+', '+lon.toFixed(6);
         els.acc.textContent = acc.toFixed(1);
-        // adopt GPS heading only if no compass yet
-        adoptGpsHeading(heading);
+        adoptGpsHeading(heading); // only if no compass yet
         maybeEnableSave();
         setStatus('Tracking', '#60a5fa');
-        // start live updates
         watchId = navigator.geolocation.watchPosition(onWatch, onWatchError, { enableHighAccuracy:true, timeout:20000, maximumAge:0 });
       }
-      function onFixError(err){ log(`GPS error (${err.code}): ${err.message}`); setStatus('Idle'); }
+      function onFixError(err){ log('GPS error ('+err.code+'): '+err.message); setStatus('Idle'); }
       function onWatch(pos){
         const { latitude:lat, longitude:lon, accuracy:acc, heading } = pos.coords;
         currentPosition = { lat, lon, acc };
@@ -238,7 +236,8 @@
     // ===== Map (Leaflet) =====
     let map, layerGroup;
     function ensureMap(){ if (!map){ map = L.map('map'); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20,attribution:'&copy; OpenStreetMap'}).addTo(map); layerGroup = L.layerGroup().addTo(map); } }
-    function destinationPoint(lat, lon, bearingDeg, distM){ const R=6371000, br=bearingDeg*Math.PI/180, phi1=lat*Math.PI/180, lam1=lon*Math.PI/180, d=distM/R; const phi2=Math.asin(Math.sin(phi1)*Math.cos(d)+Math.cos(phi1)*Math.sin(d)*Math.cos(br)); const lam2=lam1+Math.atan2(Math.sin(br)*Math.sin(d)*Math.cos(phi1), Math.cos(d)-Math.sin(phi1)*Math.sin(phi2)); return { lat:phi2*180/Math.PI, lon:((lam2*180/Math.PI+540)%360)-180 }; }
+    function destinationPoint(lat, lon, bearingDeg, distM){ const R=6371000, br=bearingDeg*Math.PI/180, phi1=lat*Math.PI/180, lam1=lon*Math.PI/180, d=distM/R; const phi2=Math.asin(Math.sin(phi1)*Math.cos(d)+Math.cos(phi1)*Math.sin(d)*Math.cos(br)); const lam2=lam1+Math.atan2(Math.sin(br)*Math.sin(d)*Math.cos(phi1), Math.cos(d)-Math.sin(phi1)*Math.sin(phi2)); return { lat:phi2*180/Math.PI, lon:((lam2*180/Math.PI+540)%360)-180 };
+    }
     function refreshMap(){ ensureMap(); layerGroup.clearLayers(); if(points.length===0){ return; } const ll=[]; for(const p of points){ const latlng=[p.lat,p.lon]; ll.push(latlng); const popupHtml=`<div style="min-width:180px"><div><strong>${new Date(p.ts).toLocaleString()}</strong></div><div class="mono">${p.lat.toFixed(6)}, ${p.lon.toFixed(6)}</div><div>± ${p.acc.toFixed(1)} m ${p.bearing!=null?('• '+p.bearing.toFixed(0)+'°'):''}</div><img src="${p.photoDataUrl}" style="width:100%;margin-top:6px;border-radius:8px"/></div>`; L.marker(latlng).addTo(layerGroup).bindPopup(popupHtml); L.circle(latlng,{radius:p.acc,color:'#60a5fa',weight:1,fillOpacity:.08}).addTo(layerGroup); if(typeof p.bearing==='number'){ const d=destinationPoint(p.lat,p.lon,p.bearing,20); L.polyline([latlng,[d.lat,d.lon]],{weight:3}).addTo(layerGroup); } } const b=L.latLngBounds(ll); map.fitBounds(b.pad(.2)); }
 
     // ===== Export =====
@@ -256,7 +255,7 @@
         'var g=L.layerGroup().addTo(map);var ll=[];',
         'function dest(lat,lon,brg,dist){var R=6371000,br=brg*Math.PI/180,phi1=lat*Math.PI/180,lam1=lon*Math.PI/180,del=dist/R;var phi2=Math.asin(Math.sin(phi1)*Math.cos(del)+Math.cos(phi1)*Math.sin(del)*Math.cos(br));var lam2=lam1+Math.atan2(Math.sin(br)*Math.sin(del)*Math.cos(phi1),Math.cos(del)-Math.sin(phi1)*Math.sin(phi2));return{lat:phi2*180/Math.PI,lon:(lam2*180/Math.PI+540)%360-180}};',
         'data.forEach(function(p){var latlng=[p.lat,p.lon];ll.push(latlng);',
-        "var html='<div class=pop><b>'+new Date(p.ts).toLocaleString()+'</b><br><span>'+p.lat.toFixed(6)+', '+p.lon.toFixed(6)+"</span><br><span>&plusmn; "+p.acc.toFixed(1)+" m "+(p.bearing!=null?'• '+p.bearing.toFixed(0)+'°':'')+"</span><br><img src=\""+p.photo+"\"></div>';",
+        "var html='<div class=pop><b>'+new Date(p.ts).toLocaleString()+'</b><br><span>'+p.lat.toFixed(6)+', '+p.lon.toFixed(6)+'</span><br><span>&plusmn; '+p.acc.toFixed(1)+' m '+(p.bearing!=null?'• '+p.bearing.toFixed(0)+'°':'')+'</span><br><img src=\"'+p.photo+'\"></div>';",
         'L.marker(latlng).addTo(g).bindPopup(html);',
         "L.circle(latlng,{radius:p.acc,color:'#3b82f6',weight:1,fillOpacity:.08}).addTo(g);",
         "if(typeof p.bearing==='number'){var d=dest(p.lat,p.lon,p.bearing,20);L.polyline([latlng,[d.lat,d.lon]],{weight:3}).addTo(g)}",
@@ -264,11 +263,17 @@
         '})();'
       ].join('');
       const inlineScript = '<script>' + scriptBody + '<' + '/script>';
-      const htmlDoc = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Map Export</title>'+leafletCss+'<style>html,body,#map{height:100%;margin:0}.pop img{max-width:240px;border-radius:8px}</style></head><body><div id="map"></div>'+leafletJs+inlineScript+'</body></html>';
+      const htmlDoc = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Map Export</title>'
+        + leafletCss + '<style>html,body,#map{height:100%;margin:0}.pop img{max-width:240px;border-radius:8px}</style></head><body><div id="map"></div>'
+        + leafletJs + inlineScript + '</body></html>';
       return htmlDoc;
     }
 
-    function exportHTML(){ const data = points.map(p=>({ lat:p.lat, lon:p.lon, acc:p.acc, bearing:p.bearing, ts:p.ts, photo:p.photoDataUrl })); const html = buildMapHTML(data); downloadBlob(new Blob([html],{type:'text/html'}),'map.html'); }
+    function exportHTML(){
+      const data = points.map(p=>({ lat:p.lat, lon:p.lon, acc:p.acc, bearing:p.bearing, ts:p.ts, photo:p.photoDataUrl }));
+      const html = buildMapHTML(data);
+      downloadBlob(new Blob([html],{type:'text/html'}),'map.html');
+    }
 
     // ===== Utils =====
     function downloadBlob(blob, filename){ const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; a.click(); setTimeout(()=>URL.revokeObjectURL(url), 1000); }
@@ -288,6 +293,9 @@
       // destinationPoint round-trip ~1m
       const start={lat:51.5,lon:-0.1}; const d1=destinationPoint(start.lat,start.lon,0,1000); const d2=destinationPoint(d1.lat,d1.lon,180,1000); const dist=Math.hypot((d2.lat-start.lat)*111320,(d2.lon-start.lon)*40075000/360*Math.cos(start.lat*Math.PI/180));
       assert('destinationPoint round-trip ~1m', dist < 2);
+      // New: GeoJSON shape sanity
+      const fc = { type:'FeatureCollection', features: points.map(p=>({ type:'Feature', geometry:{ type:'Point', coordinates:[p.lon,p.lat] }, properties:{ id:p.id, timestamp:p.ts, accuracy:p.acc, bearing:p.bearing, photo:p.photoDataUrl } })) };
+      assert('GeoJSON FeatureCollection structure', fc.type==='FeatureCollection' && Array.isArray(fc.features));
       const passed = results.filter(r=>r.pass).length; log(`Tests: ${passed}/${results.length} passed`); results.forEach(r=> log(`${r.pass?'✅':'❌'} ${r.name}`));
     }
 
