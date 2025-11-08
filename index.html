@@ -1,313 +1,309 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="utf-8" />
+  <title>File System Access POC – Image Save</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Photo + GPS + Compass Logger (Full)</title>
   <style>
-    :root { --bg:#0f172a; --fg:#e5e7eb; --muted:#9ca3af; --accent:#60a5fa; --warn:#f59e0b; --err:#f87171; --card:#111827; }
-    html,body{height:100%}
-    body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,sans-serif}
-    header{padding:12px 16px;border-bottom:1px solid #1f2937;display:flex;align-items:center;gap:12px}
-    h1{font-size:18px;margin:0}
-    .pill{display:inline-flex;gap:6px;align-items:center;background:#0b1220;border:1px solid #263040;padding:6px 10px;border-radius:999px;color:#9ca3af}
-    main{display:grid;grid-template-columns:1.1fr 0.9fr;gap:12px;padding:12px}
-    @media (max-width: 960px){ main{grid-template-columns:1fr; grid-auto-rows:min-content; height:auto} }
-    .panel{background:var(--card);border:1px solid #1f2937;border-radius:12px;padding:12px}
-    .controls{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
-    button{background:#1e293b;color:var(--fg);border:1px solid #334155;border-radius:10px;padding:8px 12px;font-weight:600;cursor:pointer}
-    button.primary{background:var(--accent);border-color:transparent;color:#0b1020}
-    button:disabled{opacity:.5;cursor:not-allowed}
-    .row{display:flex;flex-wrap:wrap;gap:16px;align-items:center}
-    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
-    #log{margin-top:8px;padding:8px;border:1px dashed #334155;border-radius:10px;font-size:12px;color:#fbbf24;background:#0b1220;max-height:160px;overflow:auto;white-space:pre-wrap}
-    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
-    .thumb{border:1px solid #374151;border-radius:10px;overflow:hidden}
-    .thumb img{display:block;width:100%;height:120px;object-fit:cover}
-    .thumb .meta{padding:8px;font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
-    video{width:100%;max-height:40vh;border-radius:12px;background:#000}
-    #map{height:60vh;border-radius:12px;border:1px solid #1f2937}
-    .small{font-size:12px;color:var(--muted)}
+    :root {
+      color-scheme: dark;
+      --bg: #020617;
+      --panel: #0b1120;
+      --accent: #16a34a;
+      --accent-soft: #1f2937;
+      --danger: #b91c1c;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        sans-serif;
+      background: radial-gradient(circle at top, #111827 0, #020617 55%, #000 100%);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .wrap {
+      width: 100%;
+      max-width: 480px;
+      padding: 1.25rem;
+    }
+    .card {
+      background: var(--panel);
+      border-radius: 1rem;
+      padding: 1.25rem 1.5rem 1.5rem;
+      box-shadow: 0 18px 45px rgba(0,0,0,0.55);
+      border: 1px solid rgba(148,163,184,0.18);
+    }
+    h1 {
+      font-size: 1.15rem;
+      margin: 0 0 0.25rem;
+    }
+    p {
+      margin: 0.25rem 0;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+    .buttons {
+      display: flex;
+      gap: 0.75rem;
+      margin-top: 1.25rem;
+    }
+    button {
+      flex: 1;
+      border-radius: 999px;
+      border: none;
+      padding: 0.7rem 0.8rem;
+      background: var(--accent-soft);
+      color: var(--text);
+      font-weight: 600;
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      cursor: pointer;
+      transition: transform 0.08s ease, box-shadow 0.08s ease, opacity 0.1s;
+    }
+    button.primary {
+      background: var(--accent);
+    }
+    button.danger {
+      background: var(--danger);
+    }
+    button:active {
+      transform: translateY(1px);
+      box-shadow: none;
+      opacity: 0.9;
+    }
+    button:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+    .status {
+      margin-top: 1rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 0.78rem;
+      background: #020617;
+      border-radius: 0.75rem;
+      padding: 0.6rem 0.75rem;
+      max-height: 8rem;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      border: 1px solid rgba(31,41,55,0.9);
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 0.2rem 0.6rem;
+      font-size: 0.7rem;
+      margin-top: 0.4rem;
+      background: rgba(15,118,110,0.18);
+      border: 1px solid rgba(34,197,94,0.45);
+      color: #a7f3d0;
+    }
   </style>
 </head>
 <body>
-  <header>
-    <h1>Photo + GPS + Compass Logger</h1>
-    <span class="pill" id="statusPill">Idle</span>
-  </header>
-  <main>
-    <section class="panel">
-      <h3 style="margin:4px 0 8px 0">Capture</h3>
-      <video id="preview" autoplay playsinline></video>
-      <div class="controls">
-        <button id="btnStart">Start Camera + GPS</button>
-        <button id="btnEnableCompass">Enable Compass</button>
-        <button id="btnCapture" disabled>Capture Photo</button>
-        <button id="btnSavePoint" disabled>Save Point</button>
-        <button id="btnRunTests">Run self‑tests</button>
+  <div class="wrap">
+    <div class="card">
+      <h1>Image save test (File System Access)</h1>
+      <p>
+        1. Tap <strong>Choose folder</strong> and pick a directory.<br />
+        2. Then hit <strong>Save test image</strong> a few times.
+      </p>
+      <p class="badge" id="support-badge">Checking support…</p>
+
+      <div class="buttons">
+        <button id="btn-choose" class="primary">Choose folder</button>
+        <button id="btn-save" disabled>Save test image</button>
       </div>
-      <div class="row small">
-        <div>Lat/Lon: <span id="latlon" class="mono">–</span></div>
-        <div>Accuracy: <span id="acc" class="mono">–</span> m</div>
-        <div>Bearing: <span id="bearing" class="mono">–</span> ° <span class="small" id="bearingSrc"></span></div>
-      </div>
-      <div id="log" class="mono">Ready…</div>
 
-      <h3 style="margin:16px 0 8px 0">Captured points</h3>
-      <div id="list" class="grid"></div>
-
-      <div class="controls" style="margin-top:8px">
-        <button id="btnExportGeoJSON">Export GeoJSON</button>
-        <button id="btnExportHTML">Export HTML Map</button>
-        <button id="btnClear">Clear</button>
-      </div>
-    </section>
-
-    <aside class="panel">
-      <h3 style="margin:4px 0 8px 0">Map preview</h3>
-      <div id="map"></div>
-      <p class="small">Accuracy circle in meters. Arrow shows bearing. Use Export to save standalone HTML or GeoJSON.</p>
-    </aside>
-  </main>
-
-  <!-- Leaflet for in-app map preview -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous"/>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
+      <div class="status" id="status"></div>
+    </div>
+  </div>
 
   <script>
-    // ===== State =====
-    const points = []; // {id, ts, lat, lon, acc, bearing, bearingSource, photoDataUrl}
-    let stream = null;
-    let currentPosition = null; // {lat, lon, acc}
-    let currentBearing = null;  // degrees
-    let bearingSource = null;   // 'compass' | 'gps' | null
-    let compassSupported = null; // true | false | null
-    let warnedNoCompass = false;
-    let watchId = null;
-    let lastPhotoDataUrl = null; // base64 data URL for export
+    const DB_NAME = "fs-access-demo";
+    const STORE_NAME = "handles";
+    const KEY_DIR = "directory";
 
-    const els = {
-      btnStart: document.getElementById('btnStart'),
-      btnCapture: document.getElementById('btnCapture'),
-      btnEnableCompass: document.getElementById('btnEnableCompass'),
-      btnSave: document.getElementById('btnSavePoint'),
-      btnRunTests: document.getElementById('btnRunTests'),
-      log: document.getElementById('log'),
-      status: document.getElementById('statusPill'),
-      video: document.getElementById('preview'),
-      list: document.getElementById('list'),
-      latlon: document.getElementById('latlon'),
-      acc: document.getElementById('acc'),
-      bearing: document.getElementById('bearing'),
-      bearingSrc: document.getElementById('bearingSrc'),
-      btnExportGeoJSON: document.getElementById('btnExportGeoJSON'),
-      btnExportHTML: document.getElementById('btnExportHTML'),
-      btnClear: document.getElementById('btnClear')
-    };
+    const logEl = document.getElementById("status");
+    const btnChoose = document.getElementById("btn-choose");
+    const btnSave = document.getElementById("btn-save");
+    const badge = document.getElementById("support-badge");
 
-    function log(msg){ els.log.textContent += '\n' + msg; els.log.scrollTop = els.log.scrollHeight; }
-    function setStatus(text, color){ els.status.textContent = text; els.status.style.color = color || '#9ca3af'; }
-
-    // ===== Start camera + GPS =====
-    async function startCameraAndGPS(){
-      if (!isSecureContext){ alert('This must be served over HTTPS. Use your GitHub Pages URL.'); log('Blocked: not a secure context.'); return; }
-      try{
-        log('Requesting camera…');
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } });
-        els.video.srcObject = stream; els.btnCapture.disabled = false; log('Camera started.');
-      }catch(e){ log('Camera error: ' + (e && e.message || e)); }
-
-      if (!('geolocation' in navigator)){ log('Geolocation not supported.'); return; }
-      setStatus('Requesting GPS…', '#f59e0b'); log('Requesting GPS position…');
-      if (watchId != null){ try{ navigator.geolocation.clearWatch(watchId); }catch(e){} watchId = null; }
-      navigator.geolocation.getCurrentPosition(onFix, onFixError, { enableHighAccuracy:true, timeout:15000, maximumAge:0 });
-
-      function onFix(pos){
-        const { latitude:lat, longitude:lon, accuracy:acc, heading } = pos.coords;
-        currentPosition = { lat, lon, acc };
-        els.latlon.textContent = lat.toFixed(6)+', '+lon.toFixed(6);
-        els.acc.textContent = acc.toFixed(1);
-        adoptGpsHeading(heading); // only if no compass yet
-        maybeEnableSave();
-        setStatus('Tracking', '#60a5fa');
-        watchId = navigator.geolocation.watchPosition(onWatch, onWatchError, { enableHighAccuracy:true, timeout:20000, maximumAge:0 });
-      }
-      function onFixError(err){ log('GPS error ('+err.code+'): '+err.message); setStatus('Idle'); }
-      function onWatch(pos){
-        const { latitude:lat, longitude:lon, accuracy:acc, heading } = pos.coords;
-        currentPosition = { lat, lon, acc };
-        els.latlon.textContent = lat.toFixed(6)+', '+lon.toFixed(6);
-        els.acc.textContent = acc.toFixed(1);
-        adoptGpsHeading(heading);
-        maybeEnableSave();
-      }
-      function onWatchError(err){ log('watchPosition: '+err.message+' (code '+err.code+')'); }
+    function log(msg) {
+      const time = new Date().toLocaleTimeString();
+      logEl.textContent += `[${time}] ${msg}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+      console.log(msg);
     }
 
-    function adoptGpsHeading(h){
-      if (typeof h === 'number' && !Number.isNaN(h) && bearingSource !== 'compass'){
-        currentBearing = ((h % 360) + 360) % 360; bearingSource = 'gps';
-        els.bearing.textContent = currentBearing.toFixed(0); els.bearingSrc.textContent = '(GPS)';
-      }
+    function openDb() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(STORE_NAME)) {
+            db.createObjectStore(STORE_NAME);
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
     }
 
-    // ===== Compass =====
-    function initCompass(){
-      log('Compass init…');
-      if (!isSecureContext){ alert('Compass needs HTTPS.'); return; }
-      function onOrientation(e){
-        let b = null;
-        if (typeof e.webkitCompassHeading === 'number') b = e.webkitCompassHeading; else if (typeof e.alpha === 'number') b = 360 - e.alpha;
-        if (b != null){
-          currentBearing = ((b % 360) + 360) % 360; bearingSource = 'compass';
-          els.bearing.textContent = currentBearing.toFixed(0); els.bearingSrc.textContent = '(compass)';
-          maybeEnableSave();
+    async function saveDirectoryHandle(handle) {
+      const db = await openDb();
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      tx.objectStore(STORE_NAME).put(handle, KEY_DIR);
+      return new Promise((resolve, reject) => {
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
+    async function loadDirectoryHandle() {
+      const db = await openDb();
+      const tx = db.transaction(STORE_NAME, "readonly");
+      const req = tx.objectStore(STORE_NAME).get(KEY_DIR);
+      return new Promise((resolve, reject) => {
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function ensurePermission(handle) {
+      if (!handle) return false;
+      const current = await handle.queryPermission({ mode: "readwrite" });
+      if (current === "granted") return true;
+      if (current === "denied") return false;
+      const requested = await handle.requestPermission({ mode: "readwrite" });
+      return requested === "granted";
+    }
+
+    async function createTestImageBlob() {
+      return new Promise((resolve, reject) => {
+        const c = document.createElement("canvas");
+        c.width = 1024;
+        c.height = 576;
+        const ctx = c.getContext("2d");
+
+        const grd = ctx.createLinearGradient(0, 0, c.width, c.height);
+        grd.addColorStop(0, "#0f172a");
+        grd.addColorStop(1, "#16a34a");
+        ctx.fillStyle = grd;
+        ctx.fillRect(0, 0, c.width, c.height);
+
+        ctx.fillStyle = "rgba(15,23,42,0.7)";
+        ctx.fillRect(48, 48, c.width - 96, c.height - 96);
+
+        ctx.fillStyle = "#e5e7eb";
+        ctx.font = "36px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("Site Evidence Test Image", c.width / 2, c.height / 2 - 10);
+
+        ctx.font = "22px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+        ctx.fillStyle = "#a5b4fc";
+        ctx.fillText(new Date().toLocaleString(), c.width / 2, c.height / 2 + 30);
+
+        c.toBlob((blob) => {
+          if (!blob) reject(new Error("Failed to create blob"));
+          else resolve(blob);
+        }, "image/png");
+      });
+    }
+
+    async function saveImageToFolder(filename) {
+      let dirHandle = await loadDirectoryHandle();
+      if (!dirHandle) {
+        log("No directory handle stored yet.");
+        btnSave.disabled = true;
+        return;
+      }
+
+      const ok = await ensurePermission(dirHandle);
+      if (!ok) {
+        log("Permission not granted. Choose folder again.");
+        btnSave.disabled = true;
+        return;
+      }
+
+      const blob = await createTestImageBlob();
+      const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      log(`Saved ${filename} into selected folder.`);
+    }
+
+    async function init() {
+      if (!("showDirectoryPicker" in window)) {
+        badge.textContent = "File System Access API not supported.";
+        badge.style.background = "rgba(127,29,29,0.35)";
+        badge.style.borderColor = "rgba(248,113,113,0.7)";
+        log("This browser does not support showDirectoryPicker(). Use Chrome/Edge on desktop or Android.");
+        btnChoose.disabled = true;
+        btnSave.disabled = true;
+        return;
+      }
+
+      badge.textContent = "File System Access supported.";
+      log("File System Access API detected.");
+
+      const existing = await loadDirectoryHandle();
+      if (existing && (await ensurePermission(existing))) {
+        log("Existing directory handle loaded and permission granted.");
+        btnSave.disabled = false;
+      } else if (existing) {
+        log("Existing handle found but no permission. User must reselect folder.");
+      } else {
+        log("No stored directory handle yet. Choose a folder to begin.");
+      }
+
+      btnChoose.addEventListener("click", async () => {
+        try {
+          const dirHandle = await window.showDirectoryPicker();
+          const allowed = await ensurePermission(dirHandle);
+          if (!allowed) {
+            log("User denied read/write access.");
+            btnSave.disabled = true;
+            return;
+          }
+          await saveDirectoryHandle(dirHandle);
+          log("Directory handle stored. You can now save images without further prompts (while permission lasts).");
+          btnSave.disabled = false;
+        } catch (err) {
+          log("Folder selection cancelled or failed: " + err.message);
         }
-      }
-      try{
-        if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function'){
-          DeviceOrientationEvent.requestPermission().then(state=>{
-            log('Compass permission: '+state);
-            if (state === 'granted'){ window.addEventListener('deviceorientation', onOrientation, true); }
-            else { compassSupported = false; warnNoCompass(); }
-          }).catch(()=>{ compassSupported = false; warnNoCompass(); });
-        } else if (window.DeviceOrientationEvent){
-          window.addEventListener('deviceorientation', onOrientation, true);
-        } else { compassSupported = false; warnNoCompass(); }
-      }catch(e){ log('Compass init error: '+(e && e.message || e)); }
+      });
+
+      btnSave.addEventListener("click", async () => {
+        btnSave.disabled = true;
+        try {
+          const ts = new Date()
+            .toISOString()
+            .replace(/[:.]/g, "-")
+            .replace("T", "_")
+            .slice(0, 19);
+          const name = `evidence-${ts}.png`;
+          await saveImageToFolder(name);
+        } catch (err) {
+          log("Save failed: " + err.message);
+        } finally {
+          btnSave.disabled = false;
+        }
+      });
     }
 
-    function warnNoCompass(){ if (warnedNoCompass) return; warnedNoCompass = true; alert('No compass or permission denied. Will use GPS course when moving.'); }
-
-    // ===== Capture photo to Data URL =====
-    function capturePhoto(){
-      if (!stream){ log('Camera stream not active.'); return; }
-      const track = stream.getVideoTracks()[0];
-      const useImageCapture = typeof ImageCapture === 'function';
-      if (useImageCapture){
-        const cap = new ImageCapture(track);
-        cap.takePhoto().then(blob=> toDataURL(blob)).catch(e=>{ log('takePhoto failed; falling back to canvas: '+(e && e.message || e)); fallbackGrab(); });
-      } else { fallbackGrab(); }
-
-      function fallbackGrab(){
-        const canvas = document.createElement('canvas');
-        const settings = track.getSettings ? track.getSettings() : {}; const w = settings.width || 1280; const h = settings.height || 720;
-        canvas.width = w; canvas.height = h; const ctx = canvas.getContext('2d'); ctx.drawImage(els.video, 0, 0, w, h);
-        canvas.toBlob(b=> toDataURL(b), 'image/jpeg', 0.92);
-      }
-      function toDataURL(blob){ const r=new FileReader(); r.onload=()=>{ lastPhotoDataUrl = r.result; maybeEnableSave(); log('Photo captured.'); }; r.readAsDataURL(blob); }
-    }
-
-    function maybeEnableSave(){ els.btnSave.disabled = !(lastPhotoDataUrl && currentPosition); }
-
-    // ===== Save point =====
-    function savePoint(){
-      if (!currentPosition || !lastPhotoDataUrl){ alert('Need a photo and a GPS fix first.'); return; }
-      const p = {
-        id: self.crypto && crypto.randomUUID ? crypto.randomUUID() : String(Date.now())+Math.random().toString(16).slice(2),
-        ts: new Date().toISOString(),
-        lat: currentPosition.lat,
-        lon: currentPosition.lon,
-        acc: currentPosition.acc,
-        bearing: typeof currentBearing === 'number' ? currentBearing : null,
-        bearingSource: bearingSource,
-        photoDataUrl: lastPhotoDataUrl
-      };
-      points.push(p); lastPhotoDataUrl = null; els.btnSave.disabled = true; renderList(); refreshMap();
-    }
-
-    // ===== List rendering =====
-    function renderList(){
-      els.list.innerHTML = '';
-      for (const p of points){
-        const div = document.createElement('div'); div.className = 'thumb';
-        const img = document.createElement('img'); img.src = p.photoDataUrl; img.alt = 'photo';
-        const meta = document.createElement('div'); meta.className = 'meta';
-        meta.innerHTML = `
-          <div class="mono">${p.lat.toFixed(6)}, ${p.lon.toFixed(6)}</div>
-          <div>± ${p.acc.toFixed(1)} m • ${p.bearing!=null?('↗ '+p.bearing.toFixed(0)+'°'): 'no bearing'}</div>
-          <div class="small">${new Date(p.ts).toLocaleString()}</div>
-          <div class="row"><button data-id="${p.id}" class="del">Delete</button></div>`;
-        div.appendChild(img); div.appendChild(meta); els.list.appendChild(div);
-      }
-      els.list.querySelectorAll('button.del').forEach(b=> b.onclick = ()=>{ const id=b.getAttribute('data-id'); const i=points.findIndex(x=>x.id===id); if(i>=0){ points.splice(i,1); renderList(); refreshMap(); } });
-    }
-
-    // ===== Map (Leaflet) =====
-    let map, layerGroup;
-    function ensureMap(){ if (!map){ map = L.map('map'); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20,attribution:'&copy; OpenStreetMap'}).addTo(map); layerGroup = L.layerGroup().addTo(map); } }
-    function destinationPoint(lat, lon, bearingDeg, distM){ const R=6371000, br=bearingDeg*Math.PI/180, phi1=lat*Math.PI/180, lam1=lon*Math.PI/180, d=distM/R; const phi2=Math.asin(Math.sin(phi1)*Math.cos(d)+Math.cos(phi1)*Math.sin(d)*Math.cos(br)); const lam2=lam1+Math.atan2(Math.sin(br)*Math.sin(d)*Math.cos(phi1), Math.cos(d)-Math.sin(phi1)*Math.sin(phi2)); return { lat:phi2*180/Math.PI, lon:((lam2*180/Math.PI+540)%360)-180 };
-    }
-    function refreshMap(){ ensureMap(); layerGroup.clearLayers(); if(points.length===0){ return; } const ll=[]; for(const p of points){ const latlng=[p.lat,p.lon]; ll.push(latlng); const popupHtml=`<div style="min-width:180px"><div><strong>${new Date(p.ts).toLocaleString()}</strong></div><div class="mono">${p.lat.toFixed(6)}, ${p.lon.toFixed(6)}</div><div>± ${p.acc.toFixed(1)} m ${p.bearing!=null?('• '+p.bearing.toFixed(0)+'°'):''}</div><img src="${p.photoDataUrl}" style="width:100%;margin-top:6px;border-radius:8px"/></div>`; L.marker(latlng).addTo(layerGroup).bindPopup(popupHtml); L.circle(latlng,{radius:p.acc,color:'#60a5fa',weight:1,fillOpacity:.08}).addTo(layerGroup); if(typeof p.bearing==='number'){ const d=destinationPoint(p.lat,p.lon,p.bearing,20); L.polyline([latlng,[d.lat,d.lon]],{weight:3}).addTo(layerGroup); } } const b=L.latLngBounds(ll); map.fitBounds(b.pad(.2)); }
-
-    // ===== Export =====
-    function exportGeoJSON(){ const fc={ type:'FeatureCollection', features: points.map(p=>({ type:'Feature', geometry:{type:'Point',coordinates:[p.lon,p.lat]}, properties:{ id:p.id, timestamp:p.ts, accuracy:p.acc, bearing:p.bearing, bearingSource:p.bearingSource, photo:p.photoDataUrl } })) }; downloadBlob(new Blob([JSON.stringify(fc,null,2)],{type:'application/geo+json'}),'photo_points.geojson'); }
-
-    function buildMapHTML(data){
-      const leafletCss = '<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">';
-      const leafletJs = '<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"><' + '/script>';
-      const dataJson = JSON.stringify(data);
-      const scriptBody = [
-        '(function(){',
-        'var data = ' + dataJson + ';',
-        "var map=L.map('map');",
-        "L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20,attribution:'&copy; OpenStreetMap'}).addTo(map);",
-        'var g=L.layerGroup().addTo(map);var ll=[];',
-        'function dest(lat,lon,brg,dist){var R=6371000,br=brg*Math.PI/180,phi1=lat*Math.PI/180,lam1=lon*Math.PI/180,del=dist/R;var phi2=Math.asin(Math.sin(phi1)*Math.cos(del)+Math.cos(phi1)*Math.sin(del)*Math.cos(br));var lam2=lam1+Math.atan2(Math.sin(br)*Math.sin(del)*Math.cos(phi1),Math.cos(del)-Math.sin(phi1)*Math.sin(phi2));return{lat:phi2*180/Math.PI,lon:(lam2*180/Math.PI+540)%360-180}};',
-        'data.forEach(function(p){var latlng=[p.lat,p.lon];ll.push(latlng);',
-        "var html='<div class=pop><b>'+new Date(p.ts).toLocaleString()+'</b><br><span>'+p.lat.toFixed(6)+', '+p.lon.toFixed(6)+'</span><br><span>&plusmn; '+p.acc.toFixed(1)+' m '+(p.bearing!=null?'• '+p.bearing.toFixed(0)+'°':'')+'</span><br><img src=\"'+p.photo+'\"></div>';",
-        'L.marker(latlng).addTo(g).bindPopup(html);',
-        "L.circle(latlng,{radius:p.acc,color:'#3b82f6',weight:1,fillOpacity:.08}).addTo(g);",
-        "if(typeof p.bearing==='number'){var d=dest(p.lat,p.lon,p.bearing,20);L.polyline([latlng,[d.lat,d.lon]],{weight:3}).addTo(g)}",
-        '}); if(ll.length){map.fitBounds(L.latLngBounds(ll).pad(.2));}',
-        '})();'
-      ].join('');
-      const inlineScript = '<script>' + scriptBody + '<' + '/script>';
-      const htmlDoc = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Map Export</title>'
-        + leafletCss + '<style>html,body,#map{height:100%;margin:0}.pop img{max-width:240px;border-radius:8px}</style></head><body><div id="map"></div>'
-        + leafletJs + inlineScript + '</body></html>';
-      return htmlDoc;
-    }
-
-    function exportHTML(){
-      const data = points.map(p=>({ lat:p.lat, lon:p.lon, acc:p.acc, bearing:p.bearing, ts:p.ts, photo:p.photoDataUrl }));
-      const html = buildMapHTML(data);
-      downloadBlob(new Blob([html],{type:'text/html'}),'map.html');
-    }
-
-    // ===== Utils =====
-    function downloadBlob(blob, filename){ const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; a.click(); setTimeout(()=>URL.revokeObjectURL(url), 1000); }
-
-    // ===== Tests =====
-    function runTests(){
-      const results = []; function assert(name, cond){ results.push({name, pass: !!cond}); if(!cond) console.error('Test failed:', name); }
-      assert('secure context boolean', typeof isSecureContext === 'boolean');
-      assert('mediaDevices present', !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
-      assert('geolocation present', 'geolocation' in navigator);
-      // Export HTML well-formed
-      const html = buildMapHTML([{lat:0,lon:0,acc:1,bearing:null,ts:'x',photo:''}]);
-      assert('exported HTML has script wrapper', /<script>[\s\S]*<\/script>/.test(html));
-      assert('exported HTML contains </body>', /<\/body>/.test(html));
-      assert('exported HTML ends with </html>', /<\/html>\s*$/.test(html));
-      assert('exported HTML contains #map', /<div id="map"><\/div>/.test(html));
-      // destinationPoint round-trip ~1m
-      const start={lat:51.5,lon:-0.1}; const d1=destinationPoint(start.lat,start.lon,0,1000); const d2=destinationPoint(d1.lat,d1.lon,180,1000); const dist=Math.hypot((d2.lat-start.lat)*111320,(d2.lon-start.lon)*40075000/360*Math.cos(start.lat*Math.PI/180));
-      assert('destinationPoint round-trip ~1m', dist < 2);
-      // New: GeoJSON shape sanity
-      const fc = { type:'FeatureCollection', features: points.map(p=>({ type:'Feature', geometry:{ type:'Point', coordinates:[p.lon,p.lat] }, properties:{ id:p.id, timestamp:p.ts, accuracy:p.acc, bearing:p.bearing, photo:p.photoDataUrl } })) };
-      assert('GeoJSON FeatureCollection structure', fc.type==='FeatureCollection' && Array.isArray(fc.features));
-      const passed = results.filter(r=>r.pass).length; log(`Tests: ${passed}/${results.length} passed`); results.forEach(r=> log(`${r.pass?'✅':'❌'} ${r.name}`));
-    }
-
-    // ===== Wire up =====
-    els.btnStart.addEventListener('click', startCameraAndGPS);
-    els.btnEnableCompass.addEventListener('click', initCompass);
-    els.btnCapture.addEventListener('click', capturePhoto);
-    els.btnSave.addEventListener('click', savePoint);
-    els.btnRunTests.addEventListener('click', runTests);
-    els.btnExportGeoJSON.addEventListener('click', exportGeoJSON);
-    els.btnExportHTML.addEventListener('click', exportHTML);
-    els.btnClear.addEventListener('click', ()=>{ if(confirm('Delete all captured points?')){ points.splice(0, points.length); renderList(); refreshMap(); } });
+    init().catch((err) => {
+      log("Fatal error during init: " + err.message);
+    });
   </script>
 </body>
 </html>
